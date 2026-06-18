@@ -11,36 +11,67 @@ type Container struct {
 }
 
 // GetAll returns containers from every available runtime.
-// A missing or broken Docker daemon is silently ignored.
+// A missing binary is silently ignored; a broken daemon is surfaced as a
+// placeholder entry so the user sees the error in the container list.
 func GetAll() ([]Container, error) {
 	sys, err := getSystemdContainers()
 	if err != nil {
 		return nil, fmt.Errorf("systemd: %w", err)
 	}
-	doc, _ := getDockerContainers() // non-fatal if Docker is absent
-	return append(sys, doc...), nil
+
+	doc, docErr := getDockerContainers()
+	if docErr != nil {
+		doc = []Container{{
+			Name:    fmt.Sprintf("docker error: %s", docErr),
+			Status:  "error",
+			Runtime: "docker",
+		}}
+	}
+
+	pod, podErr := getPodmanContainers()
+	if podErr != nil {
+		pod = []Container{{
+			Name:    fmt.Sprintf("podman error: %s", podErr),
+			Status:  "error",
+			Runtime: "podman",
+		}}
+	}
+
+	return append(append(sys, doc...), pod...), nil
 }
 
 // Toggle starts a stopped container or stops a running one.
 func Toggle(c Container) error {
-	if c.Runtime == "docker" {
+	switch c.Runtime {
+	case "docker":
 		return toggleDocker(c)
+	case "podman":
+		return togglePodman(c)
+	default:
+		return toggleSystemd(c)
 	}
-	return toggleSystemd(c)
 }
 
 // GetStatus returns a human-readable status string for the detail pane.
 func GetStatus(c Container) string {
-	if c.Runtime == "docker" {
+	switch c.Runtime {
+	case "docker":
 		return getStatusDocker(c)
+	case "podman":
+		return getStatusPodman(c)
+	default:
+		return getStatusSystemd(c)
 	}
-	return getStatusSystemd(c)
 }
 
 // ShellCommand returns the argv slice used to open a shell in the container.
 func ShellCommand(c Container) []string {
-	if c.Runtime == "docker" {
+	switch c.Runtime {
+	case "docker":
 		return []string{"docker", "exec", "-it", c.Name, "/bin/sh"}
+	case "podman":
+		return []string{"podman", "exec", "-it", c.Name, "/bin/sh"}
+	default:
+		return []string{"machinectl", "shell", c.Name}
 	}
-	return []string{"machinectl", "shell", c.Name}
 }

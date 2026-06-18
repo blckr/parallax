@@ -45,8 +45,10 @@ func (m Model) View() string {
 		Border(lipgloss.NormalBorder()).
 		PaddingLeft(detailPadL)
 
-	styleDocker  := lipgloss.NewStyle().Foreground(lipgloss.Color("6")) // cyan
-	styleSystemd := lipgloss.NewStyle().Foreground(lipgloss.Color("4")) // blue
+	styleDocker  := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))   // cyan
+	styleSystemd := lipgloss.NewStyle().Foreground(lipgloss.Color("4"))   // blue
+	stylePodman  := lipgloss.NewStyle().Foreground(lipgloss.Color("5"))   // magenta
+	styleWarn    := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))  // orange
 
 	// --- Sidebar ---
 	var sb strings.Builder
@@ -56,14 +58,21 @@ func (m Model) View() string {
 		if m.cursor == i {
 			cursor = "> "
 		}
+		if c.Status == "error" {
+			fmt.Fprintf(&sb, "%s%s %s\n", cursor, styleWarn.Render("[D]!"), c.Name)
+			continue
+		}
 		dot := styleGreen.Render("●")
 		if c.Status != "running" {
 			dot = styleRed.Render("●")
 		}
 		var rtBadge string
-		if c.Runtime == "docker" {
+		switch c.Runtime {
+		case "docker":
 			rtBadge = styleDocker.Render("[D]")
-		} else {
+		case "podman":
+			rtBadge = stylePodman.Render("[P]")
+		default:
 			rtBadge = styleSystemd.Render("[S]")
 		}
 		fmt.Fprintf(&sb, "%s%s %s %s\n", cursor, rtBadge, dot, c.Name)

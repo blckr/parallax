@@ -7,18 +7,15 @@ import (
 	"strings"
 )
 
-func getDockerContainers() ([]Container, error) {
+func getPodmanContainers() ([]Container, error) {
 	out, err := exec.Command(
-		"docker", "ps", "-a",
+		"podman", "ps", "-a",
 		"--format", "{{.Names}}\t{{.Status}}",
 	).Output()
 	if err != nil {
-		// Binary not in PATH → Docker simply isn't installed; skip silently.
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, nil
 		}
-		// Any other failure (permission denied, daemon not running, …) is
-		// worth surfacing so the user knows something is wrong.
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 			return nil, fmt.Errorf("%s", strings.TrimSpace(string(exitErr.Stderr)))
@@ -44,37 +41,37 @@ func getDockerContainers() ([]Container, error) {
 		containers = append(containers, Container{
 			Name:    name,
 			Status:  status,
-			Runtime: "docker",
-			Unit:    name,
+			Runtime: "podman",
+			Unit:    "podman-" + name + ".service",
 		})
 	}
 	return containers, nil
 }
 
-func toggleDocker(c Container) error {
+// togglePodman uses systemctl so that NixOS-managed units stay consistent.
+func togglePodman(c Container) error {
 	action := "start"
 	if c.Status == "running" {
 		action = "stop"
 	}
-	return exec.Command("docker", action, c.Name).Run()
+	return exec.Command("systemctl", action, c.Unit).Run()
 }
 
-func getStatusDocker(c Container) string {
+func getStatusPodman(c Container) string {
 	if c.Status == "error" {
-		return c.Name // Name holds the full "docker error: ..." message
+		return c.Name
 	}
 	if c.Status != "running" {
 		return fmt.Sprintf("Container %q is stopped.\n\nPress 's' to start it.", c.Name)
 	}
-	// docker inspect --format uses Go templates; .Name starts with "/"
 	const tpl = "Name:    {{slice .Name 1}}\n" +
 		"Image:   {{.Config.Image}}\n" +
 		"Status:  {{.State.Status}}\n" +
 		"Started: {{.State.StartedAt}}\n" +
 		"IP:      {{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}"
-	out, err := exec.Command("docker", "inspect", "--format", tpl, c.Name).Output()
+	out, err := exec.Command("podman", "inspect", "--format", tpl, c.Name).Output()
 	if err != nil {
-		return fmt.Sprintf("docker inspect failed: %v", err)
+		return fmt.Sprintf("podman inspect failed: %v", err)
 	}
 	return strings.TrimSpace(string(out))
 }

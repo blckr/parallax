@@ -275,7 +275,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "s":
 			if len(m.containers) > 0 {
-				return m, toggleContainer(m.containers[m.cursor])
+				selected := m.containers[m.cursor]
+				if selected.Status != "error" {
+					return m, toggleContainer(selected)
+				}
 			}
 
 		case "enter":

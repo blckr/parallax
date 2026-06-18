@@ -1,13 +1,13 @@
 {
-  description = "A Nix-flake-based Go development environment";
+  description = "parallax — TUI for managing systemd-nspawn, Podman, and Docker containers";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   outputs =
-    { self, ... }@inputs:
+    { self, nixpkgs, ... }@inputs:
 
     let
-      goVersion = 26; # Change this to update the whole stack
+      goVersion = 26;
 
       supportedSystems = [
         "x86_64-linux"
@@ -17,12 +17,12 @@
       ];
       forEachSupportedSystem =
         f:
-        inputs.nixpkgs.lib.genAttrs supportedSystems (
+        nixpkgs.lib.genAttrs supportedSystems (
           system:
           f {
-            pkgs = import inputs.nixpkgs {
+            pkgs = import nixpkgs {
               inherit system;
-              overlays = [ inputs.self.overlays.default ];
+              overlays = [ self.overlays.default ];
             };
           }
         );
@@ -32,20 +32,29 @@
         go = final."go_1_${toString goVersion}";
       };
 
+      packages = forEachSupportedSystem (
+        { pkgs }:
+        {
+          default = pkgs.buildGoModule {
+            pname = "parallax";
+            version = "0.1.0";
+            src = ./.;
+            vendorHash = "sha256-NA8JYWsYqb+wbTjbaPA243LO0Ta7a3aM66OlG7X66hA=";
+          };
+        }
+      );
+
       devShells = forEachSupportedSystem (
         { pkgs }:
         {
           default = pkgs.mkShellNoCC {
             packages = with pkgs; [
-              # go (version is specified by overlay)
               go
-
               gotools
               golangci-lint
               gopls
               delve
               golangci-lint-langserver
-
               gcc
             ];
           };
