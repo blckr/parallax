@@ -4,7 +4,16 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 )
+
+// podmanMaintenanceUnits are Podman's own internal service units, not containers.
+var podmanMaintenanceUnits = map[string]bool{
+	"auto-update":     true,
+	"clean-transient": true,
+	"prune":           true,
+	"restart":         true,
+}
 
 func getSystemdContainers() ([]Container, error) {
 	nspawn, err := getNspawnContainers()
@@ -99,7 +108,8 @@ func getPodmanUnitContainers() []Container {
 			continue
 		}
 		name := fullUnit[len("podman-") : len(fullUnit)-len(".service")]
-		if name == "" {
+		// Skip template units (e.g. kube@) and Podman's own maintenance services.
+		if name == "" || strings.HasSuffix(name, "@") || podmanMaintenanceUnits[name] {
 			continue
 		}
 		status := "stopped"
@@ -116,12 +126,25 @@ func getPodmanUnitContainers() []Container {
 	return containers
 }
 
+// runSystemctl runs a systemctl command in a detached session so that polkit
+// cannot reach the TUI's controlling terminal for interactive authentication.
+// Any output (including auth-failure messages) is captured and returned as an error.
+func runSystemctl(args ...string) error {
+	cmd := exec.Command("systemctl", args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	out, err := cmd.CombinedOutput()
+	if err != nil && len(out) > 0 {
+		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
+	}
+	return err
+}
+
 func toggleSystemd(c Container) error {
 	action := "start"
 	if c.Status == "running" {
 		action = "stop"
 	}
-	return exec.Command("systemctl", action, c.Unit).Run()
+	return runSystemctl(action, c.Unit)
 }
 
 func getStatusSystemd(c Container) string {

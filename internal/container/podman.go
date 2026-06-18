@@ -49,7 +49,7 @@ func togglePodman(c Container) error {
 	if c.Status == "running" {
 		action = "stop"
 	}
-	return exec.Command("systemctl", action, c.Unit).Run()
+	return runSystemctl(action, c.Unit)
 }
 
 func getStatusPodman(c Container) string {
