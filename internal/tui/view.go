@@ -96,9 +96,12 @@ func (m Model) View() string {
 		termW, termH := m.termVpSize()
 
 		var header string
-		if m.mode == modeTerminalDone {
+		switch m.mode {
+		case modeToggle:
+			header = styleDim.Render("Authenticating...  (ctrl+] to cancel)")
+		case modeTerminalDone:
 			header = styleDim.Render(fmt.Sprintf("Terminal: %s  [session ended — press any key to close]", m.connectedTo))
-		} else {
+		default:
 			header = styleConnected.Render(fmt.Sprintf("Terminal: %s", m.connectedTo)) +
 				styleDim.Render("  (ctrl+] to disconnect)")
 		}
@@ -115,6 +118,8 @@ func (m Model) View() string {
 	// --- Footer ---
 	var footer string
 	switch m.mode {
+	case modeToggle:
+		footer = "\n" + styleDim.Render(" Type password if prompted  •  ctrl+]: Cancel")
 	case modeTerminal:
 		footer = "\n" + styleDim.Render(" ctrl+]: Disconnect  •  j/k: Navigate Containers")
 	case modeTerminalDone:

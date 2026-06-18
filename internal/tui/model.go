@@ -13,6 +13,7 @@ const (
 	modeNormal       appMode = iota
 	modeTerminal             // keyboard input is forwarded to the PTY
 	modeTerminalDone         // process exited; pane stays open until user dismisses
+	modeToggle               // systemctl running in PTY for auth; auto-closes on exit
 )
 
 type errMsg struct{ err error }

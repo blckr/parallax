@@ -24,6 +24,7 @@ type sessionStartedMsg struct {
 }
 type sessionErrorMsg struct{ err error }
 type toggleDoneMsg struct{ err error }
+type toggleSessionMsg struct{ session *terminal.Session }
 
 // ansiRegex strips ANSI/VT100 escape sequences from terminal output.
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\x1b[PX^_].*?\x1b\\|\x1b\][^\x07]*\x07|\x1b[^[\x9b]`)
@@ -97,13 +98,17 @@ func waitForNextTick() tea.Cmd {
 	})
 }
 
-// toggleContainer starts or stops the selected container.
-// tea.ExecProcess suspends the TUI so interactive auth prompts (e.g. polkit)
-// can reach the terminal, then resumes when the command exits.
-func toggleContainer(c container.Container) tea.Cmd {
-	return tea.ExecProcess(container.ToggleCmd(c), func(err error) tea.Msg {
-		return toggleDoneMsg{err}
-	})
+// startToggle runs the toggle command in a PTY pane inside the TUI so that
+// polkit password prompts appear inline rather than tearing down the whole view.
+func startToggle(c container.Container, rows, cols int) tea.Cmd {
+	return func() tea.Msg {
+		cmd := container.ToggleCmd(c)
+		sess, err := terminal.NewSession(cmd.Args, rows, cols)
+		if err != nil {
+			return toggleDoneMsg{err}
+		}
+		return toggleSessionMsg{session: sess}
+	}
 }
 
 // connectToContainer spawns a PTY session for the given container.
@@ -192,6 +197,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		return m, checkSystemCmd
 
+	case toggleSessionMsg:
+		m.session = msg.session
+		m.mode = modeToggle
+		m.termLines = []string{""}
+		m = m.recalculateLayout()
+		termW, termH := m.termVpSize()
+		m.termViewport = viewport.New(termW, termH)
+		return m, readFromPTY(m.session)
+
 	case sessionStartedMsg:
 		m.session = msg.session
 		m.connectedTo = msg.containerName
@@ -214,11 +228,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, readFromPTY(m.session)
 
 	case ptyExitMsg:
-		// Keep the pane open so the user can read any output/error before dismissing.
 		if m.session != nil {
 			m.session.Close()
 			m.session = nil
 		}
+		if m.mode == modeToggle {
+			// Auto-close and refresh — no need for user to dismiss.
+			m.mode = modeNormal
+			m.termLines = nil
+			m = m.recalculateLayout()
+			return m, checkSystemCmd
+		}
+		// Keep the pane open so the user can read any output/error before dismissing.
 		m.mode = modeTerminalDone
 		return m, nil
 
@@ -235,6 +256,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeTerminalDone {
 			m.disconnectSession()
 			m = m.recalculateLayout()
+			return m, nil
+		}
+
+		if m.mode == modeToggle {
+			if keyStr == "ctrl+]" {
+				m.disconnectSession()
+				m = m.recalculateLayout()
+				return m, checkSystemCmd
+			}
+			if m.session != nil {
+				if b, ok := keyMap[keyStr]; ok {
+					m.session.Write(b) //nolint:errcheck
+				} else if len(keyStr) == 1 {
+					m.session.Write([]byte(keyStr)) //nolint:errcheck
+				}
+			}
 			return m, nil
 		}
 
@@ -279,7 +316,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.containers) > 0 {
 				selected := m.containers[m.cursor]
 				if selected.Status != "error" {
-					return m, toggleContainer(selected)
+					m.mode = modeToggle
+					termW, termH := m.termVpSize()
+					m.mode = modeNormal
+					return m, startToggle(selected, termH, termW)
 				}
 			}
 
@@ -381,7 +421,7 @@ func (m Model) panelH() int {
 
 // terminalActive reports whether the terminal pane is currently being shown.
 func (m Model) terminalActive() bool {
-	return m.mode == modeTerminal || m.mode == modeTerminalDone
+	return m.mode == modeTerminal || m.mode == modeTerminalDone || m.mode == modeToggle
 }
 
 // topOuterH is the outer height (including border) of the top two-column section.
