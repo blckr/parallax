@@ -1,7 +1,6 @@
 package container
 
 import (
-	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -13,14 +12,10 @@ func getPodmanContainers() ([]Container, error) {
 		"--format", "{{.Names}}\t{{.Status}}",
 	).Output()
 	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			return nil, nil
-		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			return nil, fmt.Errorf("%s", strings.TrimSpace(string(exitErr.Stderr)))
-		}
-		return nil, err
+		// Any error (binary missing, user namespaces disabled, daemon issues)
+		// is silently skipped — systemd-managed containers are picked up via
+		// podman-*.service units in the systemd backend instead.
+		return nil, nil
 	}
 
 	var containers []Container

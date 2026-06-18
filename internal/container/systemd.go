@@ -7,7 +7,16 @@ import (
 )
 
 func getSystemdContainers() ([]Container, error) {
-	// Which container units are currently active?
+	nspawn, err := getNspawnContainers()
+	if err != nil {
+		return nil, err
+	}
+	podman := getPodmanUnitContainers()
+	return append(nspawn, podman...), nil
+}
+
+// getNspawnContainers detects systemd-nspawn containers (container@*.service).
+func getNspawnContainers() ([]Container, error) {
 	runningMap := make(map[string]bool)
 	activeOut, _ := exec.Command(
 		"systemctl", "list-units", "--state=active", "--no-legend", "--no-pager", "container@*",
@@ -21,7 +30,6 @@ func getSystemdContainers() ([]Container, error) {
 		}
 	}
 
-	// All configured container unit-files.
 	out, err := exec.Command(
 		"systemctl", "list-unit-files", "container@*", "--no-legend", "--no-pager",
 	).Output()
@@ -57,6 +65,55 @@ func getSystemdContainers() ([]Container, error) {
 		})
 	}
 	return containers, nil
+}
+
+// getPodmanUnitContainers detects podman containers managed as podman-*.service
+// systemd units (e.g. NixOS virtualisation.oci-containers with Podman backend).
+// This works without rootless user namespaces.
+func getPodmanUnitContainers() []Container {
+	runningMap := make(map[string]bool)
+	activeOut, _ := exec.Command(
+		"systemctl", "list-units", "--state=active", "--no-legend", "--no-pager", "podman-*.service",
+	).Output()
+	for line := range strings.SplitSeq(string(activeOut), "\n") {
+		for _, f := range strings.Fields(line) {
+			if strings.HasPrefix(f, "podman-") && strings.HasSuffix(f, ".service") {
+				runningMap[f] = true
+				break
+			}
+		}
+	}
+
+	out, _ := exec.Command(
+		"systemctl", "list-unit-files", "podman-*.service", "--no-legend", "--no-pager",
+	).Output()
+
+	var containers []Container
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 1 {
+			continue
+		}
+		fullUnit := fields[0]
+		if !strings.HasPrefix(fullUnit, "podman-") || !strings.HasSuffix(fullUnit, ".service") {
+			continue
+		}
+		name := fullUnit[len("podman-") : len(fullUnit)-len(".service")]
+		if name == "" {
+			continue
+		}
+		status := "stopped"
+		if runningMap[fullUnit] {
+			status = "running"
+		}
+		containers = append(containers, Container{
+			Name:    name,
+			Status:  status,
+			Runtime: "podman",
+			Unit:    fullUnit,
+		})
+	}
+	return containers
 }
 
 func toggleSystemd(c Container) error {
