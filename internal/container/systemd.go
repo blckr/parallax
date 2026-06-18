@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-	"syscall"
 )
 
 // podmanMaintenanceUnits are Podman's own internal service units, not containers.
@@ -124,27 +123,6 @@ func getPodmanUnitContainers() []Container {
 		})
 	}
 	return containers
-}
-
-// runSystemctl runs a systemctl command in a detached session so that polkit
-// cannot reach the TUI's controlling terminal for interactive authentication.
-// Any output (including auth-failure messages) is captured and returned as an error.
-func runSystemctl(args ...string) error {
-	cmd := exec.Command("systemctl", args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	out, err := cmd.CombinedOutput()
-	if err != nil && len(out) > 0 {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
-	}
-	return err
-}
-
-func toggleSystemd(c Container) error {
-	action := "start"
-	if c.Status == "running" {
-		action = "stop"
-	}
-	return runSystemctl(action, c.Unit)
 }
 
 func getStatusSystemd(c Container) string {

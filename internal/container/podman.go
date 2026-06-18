@@ -44,14 +44,6 @@ func getPodmanContainers() ([]Container, error) {
 }
 
 // togglePodman uses systemctl so that NixOS-managed units stay consistent.
-func togglePodman(c Container) error {
-	action := "start"
-	if c.Status == "running" {
-		action = "stop"
-	}
-	return runSystemctl(action, c.Unit)
-}
-
 func getStatusPodman(c Container) string {
 	if c.Status == "error" {
 		return c.Name

@@ -1,6 +1,9 @@
 package container
 
-import "fmt"
+import (
+	"fmt"
+	"os/exec"
+)
 
 // Container represents a manageable container from any backend.
 type Container struct {
@@ -40,15 +43,19 @@ func GetAll() ([]Container, error) {
 	return append(append(sys, doc...), pod...), nil
 }
 
-// Toggle starts a stopped container or stops a running one.
-func Toggle(c Container) error {
+// ToggleCmd returns the *exec.Cmd that starts or stops the container.
+// The caller is responsible for running it (e.g. via tea.ExecProcess so that
+// interactive auth prompts like polkit can reach the terminal).
+func ToggleCmd(c Container) *exec.Cmd {
+	action := "start"
+	if c.Status == "running" {
+		action = "stop"
+	}
 	switch c.Runtime {
 	case "docker":
-		return toggleDocker(c)
-	case "podman":
-		return togglePodman(c)
-	default:
-		return toggleSystemd(c)
+		return exec.Command("docker", action, c.Name)
+	default: // "systemd", "podman" — both managed via systemctl
+		return exec.Command("systemctl", action, c.Unit)
 	}
 }
 

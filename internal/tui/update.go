@@ -98,10 +98,12 @@ func waitForNextTick() tea.Cmd {
 }
 
 // toggleContainer starts or stops the selected container.
+// tea.ExecProcess suspends the TUI so interactive auth prompts (e.g. polkit)
+// can reach the terminal, then resumes when the command exits.
 func toggleContainer(c container.Container) tea.Cmd {
-	return func() tea.Msg {
-		return toggleDoneMsg{container.Toggle(c)}
-	}
+	return tea.ExecProcess(container.ToggleCmd(c), func(err error) tea.Msg {
+		return toggleDoneMsg{err}
+	})
 }
 
 // connectToContainer spawns a PTY session for the given container.

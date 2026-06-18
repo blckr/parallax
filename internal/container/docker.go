@@ -51,19 +51,6 @@ func getDockerContainers() ([]Container, error) {
 	return containers, nil
 }
 
-func toggleDocker(c Container) error {
-	action := "start"
-	if c.Status == "running" {
-		action = "stop"
-	}
-	cmd := exec.Command("docker", action, c.Name)
-	out, err := cmd.CombinedOutput()
-	if err != nil && len(out) > 0 {
-		return fmt.Errorf("%s", strings.TrimSpace(string(out)))
-	}
-	return err
-}
-
 func getStatusDocker(c Container) string {
 	if c.Status == "error" {
 		return c.Name // Name holds the full "docker error: ..." message
