@@ -59,7 +59,13 @@ func (m Model) View() string {
 			cursor = "> "
 		}
 		if c.Status == "error" {
-			fmt.Fprintf(&sb, "%s%s %s\n", cursor, styleWarn.Render("[D]!"), c.Name)
+			// Show only the first line, truncated to fit the sidebar.
+			errLine := strings.SplitN(c.Name, "\n", 2)[0]
+			const maxErrW = 22 // sidebar content - cursor - badge - space
+			if len(errLine) > maxErrW {
+				errLine = errLine[:maxErrW-1] + "…"
+			}
+			fmt.Fprintf(&sb, "%s%s %s\n", cursor, styleWarn.Render("[D]!"), errLine)
 			continue
 		}
 		dot := styleGreen.Render("●")
