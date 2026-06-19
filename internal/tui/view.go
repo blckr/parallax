@@ -87,7 +87,7 @@ func (m Model) View() string {
 	topSection := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		sidebarStyle.Render(sb.String()),
-		detailStyle.Render(m.viewport.View()),
+		detailStyle.Render(m.detailContent()),
 	)
 
 	// --- Terminal pane ---
@@ -125,8 +125,16 @@ func (m Model) View() string {
 	case modeTerminalDone:
 		footer = "\n" + styleDim.Render(" Any key: Close terminal pane")
 	default:
-		footer = "\n" + styleDim.Render(" j/k: Navigate  •  s: Start/Stop  •  Enter: Connect  •  PgUp/PgDn: Scroll  •  q: Quit")
+		footer = "\n" + styleDim.Render(" j/k: Navigate  •  s: Start/Stop  •  Enter: Connect  •  i: Toggle View  •  PgUp/PgDn: Scroll  •  q: Quit")
 	}
 
 	return docStyle.Render(topSection + termSection + footer)
+}
+
+func (m Model) detailContent() string {
+	if m.detailView == detailSysInfo {
+		w, _ := m.statusVpSize()
+		return renderSysInfo(m.sysInfo, w)
+	}
+	return m.viewport.View()
 }

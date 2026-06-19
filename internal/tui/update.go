@@ -18,6 +18,11 @@ type tickMsg time.Time
 type ptyOutputMsg []byte
 type ptyExitMsg struct{}
 
+type sysInfoMsg struct {
+	info sysInfo
+	cpu  rawCPUStat
+}
+
 type sessionStartedMsg struct {
 	session       *terminal.Session
 	containerName string
@@ -81,6 +86,14 @@ var keyMap = map[string][]byte{
 	"f10":       {'\x1b', '[', '2', '1', '~'},
 	"f11":       {'\x1b', '[', '2', '3', '~'},
 	"f12":       {'\x1b', '[', '2', '4', '~'},
+}
+
+// fetchSysInfoCmd reads CPU/mem/disk stats from /proc and returns a sysInfoMsg.
+func fetchSysInfoCmd(prev rawCPUStat) tea.Cmd {
+	return func() tea.Msg {
+		info, curr, _ := collectSysInfo(prev)
+		return sysInfoMsg{info: info, cpu: curr}
+	}
 }
 
 // checkSystemCmd polls all backends for the current container list.
@@ -194,8 +207,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		return m, nil
 
+	case sysInfoMsg:
+		m.prevCPU = msg.cpu
+		if m.cpuEMA < 0 {
+			m.cpuEMA = msg.info.cpuPercent
+		} else {
+			const alpha = 0.3
+			m.cpuEMA = alpha*msg.info.cpuPercent + (1-alpha)*m.cpuEMA
+		}
+		msg.info.cpuPercent = m.cpuEMA
+		m.sysInfo = msg.info
+		return m, nil
+
 	case tickMsg:
-		return m, checkSystemCmd
+		return m, tea.Batch(checkSystemCmd, fetchSysInfoCmd(m.prevCPU))
 
 	case toggleSessionMsg:
 		m.session = msg.session
@@ -300,6 +325,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.session.Close()
 			}
 			return m, tea.Quit
+
+		case "i":
+			if m.detailView == detailStatus {
+				m.detailView = detailSysInfo
+			} else {
+				m.detailView = detailStatus
+			}
 
 		case "up", "k":
 			if m.cursor > 0 {
